@@ -1,0 +1,206 @@
+// ============================================================================
+// TRADING CALENDAR ALERT INDICATOR
+// Drop this into TradingView to send alerts to your Trading Desk Calendar API
+// ============================================================================
+// Usage:
+// 1. Open TradingView Chart
+// 2. Click "Create a new indicator"
+// 3. Paste this entire code
+// 4. Save as "Trading Calendar Alert"
+// 5. Add to your chart
+// 6. Right-click → Add Alert
+// 7. In alert settings, enable "Webhook URL"
+// 8. Paste: http://your-ip:8000/api/tradingview/webhook
+// ============================================================================
+
+//@version=5
+indicator("Trading Calendar Alert System", overlay=true, max_bars_back=500)
+
+// ============================================================================
+// INPUT PARAMETERS
+// ============================================================================
+
+// RSI Settings
+rsiLength = input.int(14, title="RSI Length", minval=1, maxval=100)
+rsiOverbought = input.int(70, title="RSI Overbought", minval=0, maxval=100)
+rsiOversold = input.int(30, title="RSI Oversold", minval=0, maxval=100)
+
+// Moving Average Settings
+maLength = input.int(50, title="MA Length", minval=1, maxval=500)
+maType = input.string("SMA", title="MA Type", options=["SMA", "EMA"])
+
+// Volume Settings
+volLength = input.int(20, title="Volume MA Length", minval=1, maxval=100)
+
+// ============================================================================
+// CALCULATE INDICATORS
+// ============================================================================
+
+// RSI Calculation
+rsi = ta.rsi(close, rsiLength)
+
+// Moving Average Selection
+ma = maType == "EMA" ? ta.ema(close, maLength) : ta.sma(close, maLength)
+
+// Volume Analysis
+volMA = ta.sma(volume, volLength)
+volumeRatio = volume / volMA
+
+// Price Position Relative to MA
+aboveMA = close > ma
+belowMA = close < ma
+
+// ============================================================================
+// SIGNAL GENERATION - BUY SIGNALS
+// ============================================================================
+
+// Buy Signal 1: RSI Crossover + Price Above MA (Bullish)
+buySignal1 = ta.crossover(rsi, rsiOversold) and aboveMA and volumeRatio > 1.0
+buyLabel1 = "RSI_Bullish_Cross"
+
+// Buy Signal 2: Price crosses above MA with increasing volume
+buySignal2 = ta.crossover(close, ma) and volumeRatio > 1.2
+buyLabel2 = "Price_MA_Breakout"
+
+// Buy Signal 3: RSI Overbought but Price still rising (Momentum continuation)
+buySignal3 = rsi > rsiOverbought and ta.crossover(close, ma) and open < close
+buyLabel3 = "Momentum_Continuation"
+
+// Combined Buy Signal
+combinedBuySignal = buySignal1 or buySignal2 or buySignal3
+
+// ============================================================================
+// SIGNAL GENERATION - SELL SIGNALS
+// ============================================================================
+
+// Sell Signal 1: RSI Crossunder + Price Below MA (Bearish)
+sellSignal1 = ta.crossunder(rsi, rsiOverbought) and belowMA
+sellLabel1 = "RSI_Bearish_Cross"
+
+// Sell Signal 2: Price crosses below MA with increasing volume
+sellSignal2 = ta.crossunder(close, ma) and volumeRatio > 1.2
+sellLabel2 = "Price_MA_Breakdown"
+
+// Sell Signal 3: RSI Oversold reversal down (Momentum breakdown)
+sellSignal3 = rsi < rsiOversold and ta.crossunder(close, ma) and open > close
+sellLabel3 = "Momentum_Breakdown"
+
+// Combined Sell Signal
+combinedSellSignal = sellSignal1 or sellSignal2 or sellSignal3
+
+// ============================================================================
+// CLOSE SIGNALS (EXIT POSITIONS)
+// ============================================================================
+
+// Close Buy Position: Price breaks below MA or RSI drops below 40
+closeBuySignal = (ta.crossunder(close, ma) or rsi < 40) and rsi < rsiOverbought
+closeLabel = "Close_Long"
+
+// Close Sell Position: Price breaks above MA or RSI rises above 60
+closeSellSignal = (ta.crossover(close, ma) or rsi > 60) and rsi > rsiOversold
+closeSellLabel = "Close_Short"
+
+// ============================================================================
+// VISUAL INDICATORS ON CHART
+// ============================================================================
+
+// Plot MA
+plot(ma, color=color.blue, linewidth=2, title="Moving Average")
+
+// Plot RSI in separate pane
+hline(rsiOverbought, "RSI Overbought", color=color.red, linestyle=hline.style_dashed)
+hline(rsiOversold, "RSI Oversold", color=color.green, linestyle=hline.style_dashed)
+hline(50, "RSI Midline", color=color.gray, linestyle=hline.style_dotted)
+
+// Plot RSI (shown in separate pane automatically)
+rsiPlot = plot(rsi, "RSI", color=rsi > rsiOverbought ? color.red : rsi < rsiOversold ? color.green : color.orange)
+
+// Buy Signal Markers
+plotshape(buySignal1, style=shape.triangleup, location=location.belowbar, color=color.new(color.green, 0), size=size.small, title="Buy Signal 1")
+plotshape(buySignal2, style=shape.triangleup, location=location.belowbar, color=color.new(color.lime, 0), size=size.small, title="Buy Signal 2")
+plotshape(buySignal3, style=shape.triangleup, location=location.belowbar, color=color.new(color.teal, 0), size=size.small, title="Buy Signal 3")
+
+// Sell Signal Markers
+plotshape(sellSignal1, style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0), size=size.small, title="Sell Signal 1")
+plotshape(sellSignal2, style=shape.triangledown, location=location.abovebar, color=color.new(color.maroon, 0), size=size.small, title="Sell Signal 2")
+plotshape(sellSignal3, style=shape.triangledown, location=location.abovebar, color=color.new(color.orange, 0), size=size.small, title="Sell Signal 3")
+
+// Close Signals
+plotshape(closeBuySignal, style=shape.xcross, location=location.abovebar, color=color.gray, size=size.small, title="Close Long")
+plotshape(closeSellSignal, style=shape.xcross, location=location.belowbar, color=color.gray, size=size.small, title="Close Short")
+
+// Background color for buy/sell zones
+bgcolor(buySignal1 or buySignal2 or buySignal3 ? color.new(color.green, 90) : na)
+bgcolor(sellSignal1 or sellSignal2 or sellSignal3 ? color.new(color.red, 90) : na)
+
+// ============================================================================
+// ALERT CONDITIONS (Set these up in TradingView Alert settings)
+// ============================================================================
+
+alertcondition(combinedBuySignal, title="BUY SIGNAL", message=
+'{
+  "ticker": "{{ticker}}",
+  "signal": "BUY",
+  "price": {{close}},
+  "rsi": ' + str.tostring(rsi, "#.00") + ',
+  "ma": ' + str.tostring(ma, "#.00") + ',
+  "volume_ratio": ' + str.tostring(volumeRatio, "#.00") + ',
+  "indicator": "Trading_Calendar_Alert",
+  "time": "{{time}}",
+  "comment": "BUY: RSI=' + str.tostring(rsi, "#.0") + ' MA=' + str.tostring(ma, "#.0") + ' Vol=' + str.tostring(volumeRatio, "#.0") + 'x"
+}')
+
+alertcondition(combinedSellSignal, title="SELL SIGNAL", message=
+'{
+  "ticker": "{{ticker}}",
+  "signal": "SELL",
+  "price": {{close}},
+  "rsi": ' + str.tostring(rsi, "#.00") + ',
+  "ma": ' + str.tostring(ma, "#.00") + ',
+  "volume_ratio": ' + str.tostring(volumeRatio, "#.00") + ',
+  "indicator": "Trading_Calendar_Alert",
+  "time": "{{time}}",
+  "comment": "SELL: RSI=' + str.tostring(rsi, "#.0") + ' MA=' + str.tostring(ma, "#.0") + ' Vol=' + str.tostring(volumeRatio, "#.0") + 'x"
+}')
+
+alertcondition(closeBuySignal, title="CLOSE LONG", message=
+'{
+  "ticker": "{{ticker}}",
+  "signal": "CLOSE",
+  "price": {{close}},
+  "rsi": ' + str.tostring(rsi, "#.00") + ',
+  "indicator": "Trading_Calendar_Alert",
+  "time": "{{time}}",
+  "comment": "CLOSE LONG: Price below MA or RSI dropping"
+}')
+
+alertcondition(closeSellSignal, title="CLOSE SHORT", message=
+'{
+  "ticker": "{{ticker}}",
+  "signal": "CLOSE",
+  "price": {{close}},
+  "rsi": ' + str.tostring(rsi, "#.00") + ',
+  "indicator": "Trading_Calendar_Alert",
+  "time": "{{time}}",
+  "comment": "CLOSE SHORT: Price above MA or RSI rising"
+}')
+
+// ============================================================================
+// INFO BOX DISPLAY
+// ============================================================================
+
+infoString = 
+  "Trading Calendar Alert System\n" +
+  "RSI: " + str.tostring(rsi, "#.0") + "\n" +
+  "MA: " + str.tostring(ma, "#.0") + "\n" +
+  "Vol Ratio: " + str.tostring(volumeRatio, "#.0") + "x\n" +
+  (aboveMA ? "📈 Above MA" : "📉 Below MA") + "\n" +
+  (rsi > rsiOverbought ? "🔴 Overbought" : rsi < rsiOversold ? "🟢 Oversold" : "🟡 Neutral")
+
+var label infoLabel = na
+if barstate.islast
+    label.delete(infoLabel)
+    infoLabel := label.new(bar_index, high * 1.01, text=infoString, 
+     xloc=xloc.bar_index, yloc=yloc.price, 
+     bgcolor=color.new(color.blue, 80), textcolor=color.white,
+     style=label.style_label_left, size=size.small)
